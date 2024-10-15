@@ -1,6 +1,8 @@
 # MultiSigQ: Qubic Network Multi-Signature Wallet Contract (DRAFT)
 =====================================================
 
+![MultiSigQ Logo](https://github.com/qudeveloper/MultiSigQ/blob/main/logo.jpg)
+
 [![Draft](https://img.shields.io/badge/Draft-UNOFFICIAL-red.svg)]() Disclaimer This repository is a draft and not officially endorsed, but it can be used as a boilerplate for your projects. Feel free to use it as is, but please note that it may not be fully polished or tested.
 
 ## Introduction
