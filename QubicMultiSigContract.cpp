@@ -14,7 +14,7 @@ public:
      * @param owner The owner of the wallet
      * @param requiredSignatures The number of required signatures
      */
-    MultiSigWallet(Address owner, uint256 requiredSignatures) 
+    MultiSigWallet(Address owner, uint64 requiredSignatures) 
         : owner_(owner), requiredSignatures_(requiredSignatures), authorizedSigners_() {}
 
     /**
@@ -22,10 +22,10 @@ public:
      * @param amount The amount to check
      * @return True if the balance is sufficient, false otherwise
      */
-    bool hasSufficientBalance(uint256 amount) {
+    bool hasSufficientBalance(uint64 amount) {
         Balance balance = getBalance();
         if (balance < 0) {
-            revert("Error: Negative balance");
+            throw std::runtime_error("Error: Negative balance");
         }
         return balance >= amount;
     }
@@ -39,7 +39,7 @@ public:
         for (auto& signature : signatures) {
             Address signer = signature.getAddress();
             if (!authorizedSigners_.count(signer)) {
-                revert("Error: Unauthorized signer");
+                throw std::runtime_error("Error: Unauthorized signer");
             }
             if (!crypto::verifySignature(signature, authorizedSigners_[signer])) {
                 return false;
@@ -54,18 +54,18 @@ public:
      * @param amount The amount of the transaction
      * @param signatures The list of signatures
      */
-    void executeTransaction(Address recipient, uint256 amount, std::vector<Signature> signatures) {
+    void executeTransaction(Address recipient, uint64 amount, std::vector<Signature> signatures) {
         if (!hasSufficientBalance(amount)) {
-            revert("Insufficient balance");
+            throw std::runtime_error("Insufficient balance");
         }
         if (!verifySignatures(signatures)) {
-            revert("Invalid signatures");
+            throw std::runtime_error("Invalid signatures");
         }
         if (!isValidRecipient(recipient)) {
-            revert("Error: Invalid recipient");
+            throw std::runtime_error("Error: Invalid recipient");
         }
         if (amount <= 0) {
-            revert("Error: Invalid amount");
+            throw std::runtime_error("Error: Invalid amount");
         }
         Transaction tx = createTransaction(recipient, amount);
         broadcastTransaction(tx);
@@ -93,8 +93,8 @@ public:
      * Updates the required signatures for the wallet
      * @param requiredSignatures The new required signatures
      */
-    void updateRequiredSignatures(uint256 requiredSignatures) {
-        requiredSignatures_ = requiredSignatures;
+    void updateRequiredSignatures(uint64 requiredSignatures) {
+    requiredSignatures_ = requiredSignatures;
     }
 
 private:
@@ -106,7 +106,7 @@ private:
     /**
      * The number of required signatures
      */
-    uint256 requiredSignatures_;
+    uint64 requiredSignatures_;
 
     /**
      * The map of authorized signers and their public keys
@@ -134,28 +134,29 @@ private:
     }
 
     /**
-     * Creates a new transaction
-     * @param recipient The recipient of the transaction
-     * @param amount The amount of the transaction
-     * @return The new transaction
-     */
-    Transaction createTransaction(Address recipient, uint256 amount) {
-        Transaction tx;
-        tx.setRecipient(recipient);
-        tx.setAmount(amount);
-        return tx;
+ * Creates a new transaction
+ * @param recipient The recipient of the transaction
+ * @param amount The amount of the transaction
+ * @return The new transaction
+ */
+    Transaction createTransaction(Address recipient, uint64 amount) {
+    Transaction tx;
+    tx.setRecipient(recipient);
+    tx.setAmount(amount);
+    return tx;
     }
 
     /**
      * Broadcasts a transaction to the network
      * @param tx The transaction to broadcast
      */
-    void broadcastTransaction(Transaction tx) {
-        network::broadcastTransaction(tx);
-    }
 
     /**
      * Updates the balance of the wallet
      * @param amount The amount to update the balance by
      */
-    void updateBalance(int256 amount
+    void updateBalance(int64 amount) {
+    if (amount > getBalance()) {
+        throw std::runtime_error("Error: Insufficient balance");
+    }
+ }
