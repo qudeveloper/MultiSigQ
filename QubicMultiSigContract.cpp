@@ -1,162 +1,216 @@
-#include <qubic/core/crypto.hpp>
-#include <qubic/core/data.hpp>
-#include <qubic/core/exceptions.hpp>
+using namespace QPI;
 
-using namespace qubic;
-
-/**
- * MultiSigWallet class represents a multi-signature wallet contract
- */
-class MultiSigWallet {
+// Define the MultiSigWallet contract
+struct MultiSigWallet {
 public:
-    /**
-     * Constructor initializes the owner and required signatures
-     * @param owner The owner of the wallet
-     * @param requiredSignatures The number of required signatures
-     */
-    MultiSigWallet(Address owner, uint64 requiredSignatures) 
-        : owner_(owner), requiredSignatures_(requiredSignatures), authorizedSigners_() {}
+    // Input struct for the Initialize function
+    struct Initialize_input {
+        id owner;
+        uint64 requiredSignatures;
+    };
 
-    /**
-     * Checks if the wallet has sufficient balance for a transaction
-     * @param amount The amount to check
-     * @return True if the balance is sufficient, false otherwise
-     */
-    bool hasSufficientBalance(uint64 amount) {
-        Balance balance = getBalance();
+    // Output struct for the Initialize function
+    struct Initialize_output {
+    };
+
+    // Input struct for the HasSufficientBalance function
+    struct HasSufficientBalance_input {
+        uint64 amount;
+    };
+
+    // Output struct for the HasSufficientBalance function
+    struct HasSufficientBalance_output {
+        bit result;
+    };
+
+    // Input struct for the VerifySignatures function
+    struct VerifySignatures_input {
+        // Array of signatures with a maximum size of 64
+        array<Signature, 64> signatures;
+    };
+
+    // Output struct for the VerifySignatures function
+    struct VerifySignatures_output {
+        bit result;
+    };
+
+    // Input struct for the ExecuteTransaction procedure
+    struct ExecuteTransaction_input {
+        id recipient;
+        uint64 amount;
+        // Array of signatures with a maximum size of 64
+        array<Signature, 64> signatures;
+    };
+
+    // Output struct for the ExecuteTransaction procedure
+    struct ExecuteTransaction_output {
+    };
+
+    // Input struct for the AddAuthorizedSigner procedure
+    struct AddAuthorizedSigner_input {
+        id signer;
+        PublicKey publicKey;
+    };
+
+    // Output struct for the AddAuthorizedSigner procedure
+    struct AddAuthorizedSigner_output {
+    };
+
+    // Input struct for the RemoveAuthorizedSigner procedure
+    struct RemoveAuthorizedSigner_input {
+        id signer;
+    };
+
+    // Output struct for the RemoveAuthorizedSigner procedure
+    struct RemoveAuthorizedSigner_output {
+    };
+
+    // Input struct for the UpdateRequiredSignatures procedure
+    struct UpdateRequiredSignatures_input {
+        uint64 requiredSignatures;
+    };
+
+    // Output struct for the UpdateRequiredSignatures procedure
+    struct UpdateRequiredSignatures_output {
+    };
+
+protected:
+    // Variable to store the required number of signatures
+    uint64 _requiredSignatures;
+
+    // Collection to store the authorized signers with a maximum size of 64
+    collection<PublicKey, 64> _authorizedSigners;
+
+    // Private function to initialize the contract
+    PRIVATE_FUNCTION(Initialize)
+
+        // Set the required number of signatures
+        state._requiredSignatures = input.requiredSignatures;
+
+        // Reset the authorized signers collection
+        _authorizedSigners.reset();
+    _
+
+    // Public function to check if the balance is sufficient
+    PUBLIC_FUNCTION(HasSufficientBalance)
+
+        // Get the balance of the invocator
+        Balance balance = qpi.getBalance(qpi.invocator());
+
+        // Check if the balance is negative
         if (balance < 0) {
-            throw std::runtime_error("Error: Negative balance");
+            // Set the result to false if the balance is negative
+            output.result = false;
+        } else {
+            // Set the result to true if the balance is sufficient
+            output.result = balance >= input.amount;
         }
-        return balance >= amount;
-    }
+    _
 
-    /**
-     * Verifies a list of signatures
-     * @param signatures The list of signatures to verify
-     * @return True if the signatures are valid, false otherwise
-     */
-    bool verifySignatures(std::vector<Signature> signatures) {
-        for (auto& signature : signatures) {
+    // Public function to verify signatures
+    PUBLIC_FUNCTION(VerifySignatures)
+
+        // Iterate over the signatures
+        for (uint64 i = 0; i < 64; i++) {
+            Signature signature = input.signatures[i];
+            if (signature.isEmpty()) {
+                // Break if the signature is empty
+                break;
+            }
+
+            // Get the address of the signer
             Address signer = signature.getAddress();
-            if (!authorizedSigners_.count(signer)) {
-                throw std::runtime_error("Error: Unauthorized signer");
+
+            // Check if the signer is authorized
+            if (!_authorizedSigners.contains(signer)) {
+                // Set the result to false if the signer is not authorized
+                output.result = false;
+                return;
             }
-            if (!crypto::verifySignature(signature, authorizedSigners_[signer])) {
-                return false;
+
+            // Verify the signature
+            if (!crypto::verifySignature(signature, _authorizedSigners[signer])) {
+                // Set the result to false if the signature is invalid
+                output.result = false;
+                return;
             }
         }
-        return signatures.size() >= requiredSignatures_;
-    }
 
-    /**
-     * Executes a transaction if the signatures are valid and the balance is sufficient
-     * @param recipient The recipient of the transaction
-     * @param amount The amount of the transaction
-     * @param signatures The list of signatures
-     */
-    void executeTransaction(Address recipient, uint64 amount, std::vector<Signature> signatures) {
-        if (!hasSufficientBalance(amount)) {
-            throw std::runtime_error("Insufficient balance");
+        // Set the result to true if all signatures are valid
+        output.result = true;
+    _
+
+    // Public procedure to execute a transaction
+    PUBLIC_PROCEDURE(ExecuteTransaction)
+
+        // Check if the balance is sufficient
+        if (!qpi.getBalance(qpi.invocator()) >= input.amount) {
+            // Set the result to false if the balance is insufficient
+            output.result = false;
+            return;
         }
-        if (!verifySignatures(signatures)) {
-            throw std::runtime_error("Invalid signatures");
+
+        // Verify the signatures
+        CALL(VerifySignatures, input.signatures, output);
+        if (!output.result) {
+            // Return if the signatures are invalid
+            return;
         }
-        if (!isValidRecipient(recipient)) {
-            throw std::runtime_error("Error: Invalid recipient");
-        }
-        if (amount <= 0) {
-            throw std::runtime_error("Error: Invalid amount");
-        }
-        Transaction tx = createTransaction(recipient, amount);
-        broadcastTransaction(tx);
-        updateBalance(-amount);
-    }
 
-    /**
-     * Adds an authorized signer to the wallet
-     * @param signer The address of the signer
-     * @param publicKey The public key of the signer
-     */
-    void addAuthorizedSigner(Address signer, PublicKey publicKey) {
-        authorizedSigners_[signer] = publicKey;
-    }
+        // Transfer the amount to the recipient
+        qpi.transfer(input.recipient, input.amount);
+    _
 
-    /**
-     * Removes an authorized signer from the wallet
-     * @param signer The address of the signer
-     */
-    void removeAuthorizedSigner(Address signer) {
-        authorizedSigners_.erase(signer);
-    }
+    // Public procedure to add an authorized signer
+    PUBLIC_PROCEDURE(AddAuthorizedSigner)
 
-    /**
-     * Updates the required signatures for the wallet
-     * @param requiredSignatures The new required signatures
-     */
-    void updateRequiredSignatures(uint64 requiredSignatures) {
-    requiredSignatures_ = requiredSignatures;
-    }
+        // Add the signer to the authorized signers collection
+        _authorizedSigners.add(input.signer, input.publicKey);
+    _
 
-private:
-    /**
-     * The owner of the wallet
-     */
-    Address owner_;
+    // Public procedure to remove an authorized signer
+    PUBLIC_PROCEDURE(RemoveAuthorizedSigner)
 
-    /**
-     * The number of required signatures
-     */
-    uint64 requiredSignatures_;
+        // Remove the signer from the authorized signers collection
+        _authorizedSigners.remove(input.signer);
+    _
 
-    /**
-     * The map of authorized signers and their public keys
-     */
-    std::map<Address, PublicKey> authorizedSigners_;
+    // Public procedure to update the required signatures
+    PUBLIC_PROCEDURE(UpdateRequiredSignatures)
 
-    /**
-     * Gets the balance of the wallet
-     * @return The balance of the wallet
-     */
-    Balance getBalance() {
-        return storage::getBalance(owner_);
-    }
+        // Update the required number of signatures
+        state._requiredSignatures = input.requiredSignatures;
+    _
 
-    /**
-     * Gets the public key of a signer
-     * @param signer The address of the signer
-     * @return The public key of the signer
-     */
-    PublicKey getSignerPublicKey(Address signer) {
-        if (!authorizedSigners_.count(signer)) {
-            revert("Error: Unauthorized signer");
-        }
-        return authorizedSigners_[signer];
-    }
+    // Register user functions and procedures
+    REGISTER_USER_FUNCTIONS_AND_PROCEDURES
 
-    /**
- * Creates a new transaction
- * @param recipient The recipient of the transaction
- * @param amount The amount of the transaction
- * @return The new transaction
- */
-    Transaction createTransaction(Address recipient, uint64 amount) {
-    Transaction tx;
-    tx.setRecipient(recipient);
-    tx.setAmount(amount);
-    return tx;
-    }
+        // Register the HasSufficientBalance function
+        REGISTER_USER_FUNCTION(HasSufficientBalance, 1);
 
-    /**
-     * Broadcasts a transaction to the network
-     * @param tx The transaction to broadcast
-     */
+        // Register the VerifySignatures function
+        REGISTER_USER_FUNCTION(VerifySignatures, 2);
 
-    /**
-     * Updates the balance of the wallet
-     * @param amount The amount to update the balance by
-     */
-    void updateBalance(int64 amount) {
-    if (amount > getBalance()) {
-        throw std::runtime_error("Error: Insufficient balance");
-    }
- }
+        // Register the ExecuteTransaction procedure
+        REGISTER_USER_PROCEDURE(ExecuteTransaction, 1);
+
+        // Register the AddAuthorizedSigner procedure
+        REGISTER_USER_PROCEDURE(AddAuthorizedSigner, 2);
+
+        // Register the RemoveAuthorizedSigner procedure
+        REGISTER_USER_PROCEDURE(RemoveAuthorizedSigner, 3);
+
+        // Register the UpdateRequiredSignatures procedure
+        REGISTER_USER_PROCEDURE(UpdateRequiredSignatures, 4);
+    _
+
+    // Initialize the contract
+    INITIALIZE
+
+        // Initialize the required number of signatures to 0
+        _requiredSignatures = 0;
+
+        // Reset the authorized signers collection
+        _authorizedSigners.reset();
+    _
+};
